@@ -673,6 +673,13 @@ public class MultipleLevelsPlanPanel extends JPanel implements PlanView, Printab
   }
   
   /**
+   * Returns the level printed at the given page by the plan component.
+   */
+  public Level getPrintedLevel(Graphics graphics, PageFormat pageFormat, int pageIndex) {
+    return this.planComponent.getPrintedLevel(graphics, pageFormat, pageIndex);
+  }
+  
+  /**
    * A dummy label used to track tabs matching levels.
    */
   private static class LevelLabel extends JLabel {

@@ -47,7 +47,6 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 
 import com.eteks.sweethome3d.model.Home;
-import com.eteks.sweethome3d.model.HomePieceOfFurniture;
 import com.eteks.sweethome3d.model.HomePrint;
 import com.eteks.sweethome3d.model.LengthUnit;
 import com.eteks.sweethome3d.model.Level;
@@ -213,13 +212,12 @@ public class HomePrintableComponent extends JComponent implements Printable {
     // Prepare header and footer
     float imageableY = (float)pageFormat.getImageableY();
     float imageableHeight = (float)pageFormat.getImageableHeight();
+    Object [] variableValues = null;
     String header = null;
-    float  xHeader = 0;
     float  yHeader = 0;
     float  xFixedHeader = 0;
     float  yFixedHeader = 0;
     String footer = null;
-    float  xFooter = 0;
     float  yFooter = 0;
     float  xFixedFooter = 0;
     float  yFixedFooter = 0;
@@ -284,7 +282,7 @@ public class HomePrintableComponent extends JComponent implements Printable {
         }
         String homePresentationName = this.controller.getContentManager().getPresentationName(
              homeName, ContentManager.ContentType.SWEET_HOME_3D);
-        Object [] variableValues = new Object [] {
+        variableValues = new Object [] {
             pageNumber, pageCount, planScale, this.printDate, homePresentationName, homeName, levelName};
         
         // Create header text
@@ -292,7 +290,6 @@ public class HomePrintableComponent extends JComponent implements Printable {
         if (headerFormat != null) {
           header = Variable.getMessageFormat(headerFormat).format(variableValues).trim();
           if (header.length() > 0) {
-            xHeader = ((float)pageFormat.getWidth() - fontMetrics.stringWidth(header)) / 2;
             yHeader = imageableY + fontMetrics.getAscent();
             imageableY += headerFooterHeight;
             imageableHeight -= headerFooterHeight;
@@ -306,7 +303,6 @@ public class HomePrintableComponent extends JComponent implements Printable {
         if (footerFormat != null) {
           footer = Variable.getMessageFormat(footerFormat).format(variableValues).trim();
           if (footer.length() > 0) {
-            xFooter = ((float)pageFormat.getWidth() - fontMetrics.stringWidth(footer)) / 2;
             yFooter = imageableY + imageableHeight - fontMetrics.getDescent();
             imageableHeight -= headerFooterHeight;
           } else {
@@ -345,32 +341,8 @@ public class HomePrintableComponent extends JComponent implements Printable {
     View furnitureView = this.controller.getFurnitureController().getView();
     if (furnitureView != null 
         && (homePrint == null || homePrint.isFurniturePrinted())) {
-      FurnitureTable furnitureTable = null;
-      final FurnitureTable.FurnitureFilter furnitureFilter;
-      if (furnitureView instanceof FurnitureTable
-          && (homePrint == null
-              || homePrint.isPlanPrinted()
-              || homePrint.isView3DPrinted())) {
-        final Level selectedLevel = home.getSelectedLevel();
-        furnitureTable = (FurnitureTable)furnitureView;
-        furnitureFilter = furnitureTable.getFurnitureFilter();
-        furnitureTable.setFurnitureFilter(new FurnitureTable.FurnitureFilter() {
-            public boolean include(Home home, HomePieceOfFurniture piece) {
-              // Print only furniture at selected level when the plan or the 3D view is printed
-              return (furnitureFilter == null || furnitureFilter.include(home, piece))
-                  && piece.isAtLevel(selectedLevel)
-                  && (piece.getLevel() == null || piece.getLevel().isViewable());
-            }
-          });
-      } else {
-        furnitureFilter = null;
-      }
-      // Try to print next furniture view page      
+      // Try to print next furniture view page, that lists the furniture of all viewable levels 
       pageExists = ((Printable)furnitureView).print(g2D, pageFormat, page);
-      if (furnitureTable != null) {
-        // Restore previous filter
-        ((FurnitureTable)furnitureView).setFurnitureFilter(furnitureFilter);
-      }
       if (pageExists == PAGE_EXISTS
           && !this.printablePages.contains(page)) {
         this.printablePages.add(page);
@@ -381,11 +353,26 @@ public class HomePrintableComponent extends JComponent implements Printable {
         && planView != null 
         && (homePrint == null || homePrint.isPlanPrinted())) {
       // Try to print next plan view page
-      pageExists = ((Printable)planView).print(g2D, pageFormat, page - this.furniturePageCount);
-      if (pageExists == PAGE_EXISTS
-          && !this.printablePages.contains(page)) {
-        this.printablePages.add(page);
-        this.planPageCount++;
+      int planPage = page - this.furniturePageCount;
+      pageExists = ((Printable)planView).print(g2D, pageFormat, planPage);
+      if (pageExists == PAGE_EXISTS) {
+        if (!this.printablePages.contains(page)) {
+          this.printablePages.add(page);
+          this.planPageCount++;
+        }
+        Level printedLevel = getPrintedLevel(planView, g2D, pageFormat, planPage);
+        if (printedLevel != null
+            && variableValues != null) {
+          // Replace the name of the selected level by the one of the level printed on this page
+          // (6 is the index of LEVEL_NAME variable value)
+          variableValues [6] = printedLevel.getName();
+          if (header != null) {
+            header = Variable.getMessageFormat(homePrint.getHeaderFormat()).format(variableValues).trim();
+          }
+          if (footer != null) {
+            footer = Variable.getMessageFormat(homePrint.getFooterFormat()).format(variableValues).trim();
+          }
+        }
       }
     }
     View view3D = this.controller.getHomeController3D().getView();
@@ -410,11 +397,12 @@ public class HomePrintableComponent extends JComponent implements Printable {
         fixedHeaderPageLabel.print(g2D);
         g2D.translate(-xFixedHeader, -yFixedHeader);
       }
+      FontMetrics fontMetrics = g2D.getFontMetrics();
       if (header != null) {
-        g2D.drawString(header, xHeader, yHeader);
+        g2D.drawString(header, ((float)pageFormat.getWidth() - fontMetrics.stringWidth(header)) / 2, yHeader);
       }
       if (footer != null) {
-        g2D.drawString(footer, xFooter, yFooter);
+        g2D.drawString(footer, ((float)pageFormat.getWidth() - fontMetrics.stringWidth(footer)) / 2, yFooter);
       }
       if (fixedFooterPageLabel != null) {
         g2D.translate(xFixedFooter, yFixedFooter);
@@ -424,6 +412,20 @@ public class HomePrintableComponent extends JComponent implements Printable {
     }  
     pageFormat.setPaper(oldPaper);    
     return pageExists;
+  }
+
+  /**
+   * Returns the level printed by <code>planView</code> at the given page, 
+   * or <code>null</code> if it's unknown.
+   */
+  private Level getPrintedLevel(PlanView planView, Graphics g, PageFormat pageFormat, int page) {
+    if (planView instanceof PlanComponent) {
+      return ((PlanComponent)planView).getPrintedLevel(g, pageFormat, page);
+    } else if (planView instanceof MultipleLevelsPlanPanel) {
+      return ((MultipleLevelsPlanPanel)planView).getPrintedLevel(g, pageFormat, page);
+    } else {
+      return null;
+    }
   }
 
   /**
